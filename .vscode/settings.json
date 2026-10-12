@@ -1,0 +1,9 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python.defaultInterpreterPath": "C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0\\python.exe",
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.env.windows": {
+        "PATH": "C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0;C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0\\Scripts;C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0\\Library\\bin;${env:PATH}"
+    }
+}

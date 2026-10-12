@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Run gas_selftest (rockpool_v0)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/gas_rockpool_main.py",
+            "python": "C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0\\python.exe",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PATH": "C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0;C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0\\Scripts;C:\\Users\\fuhon\\.conda\\envs\\rockpool_v0\\Library\\bin;${env:PATH}"
+            }
+        },
+    ]
+}
