@@ -73,7 +73,7 @@ def _run_epoch(
         for features, labels in loader:
             features = features.to(device=device, dtype=torch.float32)
             labels = labels.to(device=device, dtype=torch.long).reshape(-1)
-            inputs = encoder.min_rate_encoder(input=features, cfg=cfg, device=device)
+            inputs = encoder.min_rate_encoder(input=features, cfg=cfg, device=device) 
 
             # 不同批次是独立样本，膜电位、突触电流和历史脉冲不能跨批次传递。
             model.reset_state()
