@@ -82,13 +82,13 @@ def accumulating_rate_encoder(input, sensor_count, encoding_steps):
     return outspike_list
 
 def min_rate_encoder(input, cfg, device):
-    # 找到输入中最小的值并进行累积速率编码
+    # Find the minimum input values and apply accumulating rate encoding.
     outspike_list = torch.zeros((len(input), cfg.num_timesteps, cfg.sensor_num), device=device)
     batch_size = cfg.batch_size
     min_input = torch.zeros(batch_size, cfg.sensor_num, device=device)
     for i in range(len(input)):
         for j in range(cfg.sensor_num):
-            min_input[i, j] = torch.max(input[i, ::cfg.sensor_num + j]) * 60 # 注：由于传感器响应最低点很低，大概在0.000x，因此为了有区分度乘了个50，有点简单粗暴了，后续可以改进    注意，依据响应曲线自行调整取最大还是最小值
+            min_input[i, j] = torch.max(input[i, ::cfg.sensor_num + j]) * 60 # Scale tiny response minima (~0.000x) to distinguish values; refine this heuristic as needed. Choose max or min according to the response curve.
     input_spike = 1 / (min_input/10+1)
    
     for j in range(len(input)): 

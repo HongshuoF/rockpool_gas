@@ -15,17 +15,17 @@ cfg = config.Config()
 
 
 def weight_mask_generate(input_dim, output_dim, recrrument_dim, input_feed_dim=None):
-    """行是源神经元，列是目标神经元；每层排列为 [主神经元, 抑制神经元]。
+    """Rows are source neurons and columns are targets; each layer is ordered as [principal, inhibitory neurons].
 
-    output_dim 是目标层主神经元数，recrrument_dim 是目标层抑制神经元数。
-    input_feed_dim 用于屏蔽上一层抑制神经元的层间输出；传感器输入无需设置。
+    output_dim and recrrument_dim count principal and inhibitory neurons in the target layer, respectively.
+    input_feed_dim masks interlayer outputs from the previous layer's inhibitory neurons; omit it for sensor inputs.
     """
     if input_feed_dim is None:
         input_feed_dim = input_dim
     if not 0 < input_feed_dim <= input_dim:
-        raise ValueError("需要满足 0 < input_feed_dim <= input_dim")
+        raise ValueError("Expected 0 < input_feed_dim <= input_dim")
     if output_dim <= 0 or recrrument_dim < 0:
-        raise ValueError("output_dim 必须为正数，recrrument_dim 不能为负数")
+        raise ValueError("output_dim must be positive and recrrument_dim must be non-negative")
 
     mask = torch.zeros((input_dim, output_dim + recrrument_dim))
     mask[:input_feed_dim, :output_dim] = 1.0
@@ -35,41 +35,41 @@ def weight_mask_generate(input_dim, output_dim, recrrument_dim, input_feed_dim=N
 def random_recrument_mask_generate(
     recrrument_dim, feed_dim, inhibit_dim, p_inhib, inhibit_num_per_neuron=None
 ):
-    """生成层内循环连接掩码，形状为 (本层总神经元数, 本层总神经元数)。"""
+    """Generate an intralayer recurrent mask with shape (total neurons in this layer, total neurons in this layer)."""
     if feed_dim + inhibit_dim != recrrument_dim:
         raise ValueError("feed_dim + inhibit_dim must be equal to recrrument_dim")
     if not 0 <= p_inhib <= 1:
-        raise ValueError("p_inhib 必须在 [0, 1] 之间")
+        raise ValueError("p_inhib must be in [0, 1]")
     k = cfg.inhibit_num_per_neuron if inhibit_num_per_neuron is None else inhibit_num_per_neuron
     if feed_dim <= 0 or k <= 0 or inhibit_dim != feed_dim * k:
-        raise ValueError("需要满足 inhibit_dim == feed_dim * k，且 feed_dim、k > 0")
+        raise ValueError("Expected inhibit_dim == feed_dim * k with feed_dim > 0 and k > 0")
 
     mask = torch.zeros((recrrument_dim, recrrument_dim))
-    # 主神经元 -> 抑制神经元：随机连接。
+    # Principal neurons -> inhibitory neurons: random connections.
     mask[:feed_dim, feed_dim:] = (torch.rand((feed_dim, inhibit_dim)) < p_inhib).float()
-    # 第 i 个抑制神经元 -> 第 i // k 个主神经元：固定连接拓扑。
+    # Inhibitory neuron i -> principal neuron i // k: fixed connection topology.
     inhibit_idx = torch.arange(inhibit_dim)
     mask[feed_dim + inhibit_idx, inhibit_idx // k] = 1.0
     return mask
 
 
 class MaskedWeights(TWrapper):
-    """使用 Rockpool 的参数变换，在每次前向计算中应用掩码。
+    """Apply masks on every forward pass using Rockpool parameter transformations.
 
-    原始可训练参数保存在 _mod 中；effective_weight() 返回实际参与计算的权重。
-    掩码注册为 buffer，会随 .to(device) 移动并写入 state_dict()。
+    Raw trainable parameters are stored in _mod; effective_weight() returns the weights used in computation.
+    Masks are registered as buffers, moved by .to(device), and included in state_dict().
     """
 
     def __init__(self, mod, parameter_name, mask, sign=None):
         super().__init__(mod)
         if tuple(mask.shape) != tuple(getattr(mod, parameter_name).shape):
-            raise ValueError("掩码形状必须与权重形状一致")
+            raise ValueError("Mask shape must match weight shape")
         self.parameter_name = parameter_name
-        # 使用 torch 的 buffer 注册：掩码不是会被 reset_state() 重置的神经元状态。
+        # Register as a torch buffer so reset_state() does not reset the mask as neuron state.
         torch.nn.Module.register_buffer(self, "weight_mask", mask.detach().clone())
         if sign is not None:
             if sign.shape != mask.shape:
-                raise ValueError("符号矩阵形状必须与掩码形状一致")
+                raise ValueError("Sign matrix shape must match mask shape")
             torch.nn.Module.register_buffer(self, "weight_sign", sign.detach().clone())
         else:
             self.weight_sign = None
@@ -77,7 +77,7 @@ class MaskedWeights(TWrapper):
     def effective_weight(self):
         weight = getattr(self._mod, self.parameter_name)
         if self.weight_sign is not None:
-            # 循环连接的强度可训练，但兴奋/抑制的符号不随训练改变。
+            # Recurrent connection strengths are trainable; excitatory/inhibitory signs stay fixed.
             weight = weight.abs() * self.weight_sign
         return weight * self.weight_mask
 
@@ -86,7 +86,7 @@ class MaskedWeights(TWrapper):
 
 
 class ReadoutLIFTorch(LIFTorch):
-    """保留输出层最后一次减去发放阈值后的膜电位及其计算图。"""
+    """Retain the output layer's final membrane potential after threshold subtraction and its computation graph."""
 
     final_vmem: torch.Tensor | None
 
@@ -105,11 +105,11 @@ class ReadoutLIFTorch(LIFTorch):
             spikes = original_spike_fn(vmem, threshold, *args)
             steps_left -= 1
             if steps_left == 0:
-                # 与 LIFTorch 的减阈值重置完全一致；保留整个批次，不能 detach。
+                # Match LIFTorch's subtractive threshold reset; retain the entire batch without detaching.
                 self.final_vmem = vmem - spikes * threshold
             return spikes
 
-        # 沿用 Rockpool 的神经元更新，只在最后一次发放时截取剩余膜电位。
+        # Keep Rockpool's neuron updates and capture the residual membrane potential only at the final spiking step.
         self.spike_generation_fn = capture_final_vmem
         try:
             return super().forward(input_data)
@@ -122,7 +122,7 @@ class ReadoutLIFTorch(LIFTorch):
 
 
 class FeedNeuronReadout(TorchModule):
-    """只读取最后一层的主神经元，避免将抑制神经元当成分类输出。"""
+    """Read only the final layer's principal neurons so inhibitory neurons are excluded from class outputs."""
 
     def __init__(self, total_dim, feed_dim):
         super().__init__(shape=(total_dim, feed_dim), spiking_input=True, spiking_output=True)
@@ -133,10 +133,10 @@ class FeedNeuronReadout(TorchModule):
 
 
 class GasSNN(TorchModule):
-    """两个独立的第一层分支，拼接后经过共享第二层和第三层输出。
+    """Concatenate two independent first-layer branches, then use shared second and third (output) layers.
 
-    input_b1、input_b2 均为 [B, T, sensor_num]（也支持 [T, sensor_num]），
-    两者的批次大小和时间步数必须一致。调用返回 (spikes, state, records)。
+    input_b1 and input_b2 have shape [B, T, sensor_num] (also accepting [T, sensor_num]);
+    their batch sizes and time step counts must match. Calls return (spikes, state, records).
     """
 
     def __init__(self, branch_b1, branch_b2, shared_layers):
@@ -150,7 +150,7 @@ class GasSNN(TorchModule):
         self.shared_layers = shared_layers
 
     def __call__(self, input_b1, input_b2, record=False):
-        # Rockpool 的 evolve 接收单个输入对象，用二元组携带两个分支输入。
+        # Rockpool's evolve accepts a single input object; pack both branch inputs into a pair.
         return super().__call__((input_b1, input_b2), record=record)
 
     def forward(self, input_b1, input_b2=None, record=None):
@@ -158,7 +158,7 @@ class GasSNN(TorchModule):
             self._record = record
         if input_b2 is None:
             if not isinstance(input_b1, tuple) or len(input_b1) != 2:
-                raise ValueError("请提供 input_b1 和 input_b2 两个输入")
+                raise ValueError("Both input_b1 and input_b2 are required")
             input_b1, input_b2 = input_b1
         self._record_dict = {}
         inputs = []
@@ -167,16 +167,16 @@ class GasSNN(TorchModule):
             ("input_b2", input_b2, self.branch_b2),
         ):
             if not isinstance(data, torch.Tensor) or data.ndim not in (2, 3):
-                raise ValueError(f"{name} 应为 [B, T, {branch.size_in}] 或 [T, {branch.size_in}]")
+                raise ValueError(f"{name} must have shape [B, T, {branch.size_in}] or [T, {branch.size_in}]")
             if data.shape[-1] != branch.size_in:
-                raise ValueError(f"{name} 的传感器通道数应为 {branch.size_in}")
+                raise ValueError(f"{name} must have {branch.size_in} sensor channels")
             inputs.append(data.unsqueeze(0) if data.ndim == 2 else data)
         if inputs[0].shape[:2] != inputs[1].shape[:2]:
-            raise ValueError("input_b1 和 input_b2 的批次大小和时间步数必须一致")
+            raise ValueError("input_b1 and input_b2 must have matching batch sizes and time step counts")
 
         output_b1, _, records_b1 = self.branch_b1(inputs[0], record=self._record)
         output_b2, _, records_b2 = self.branch_b2(inputs[1], record=self._record)
-        # 两个分支已剔除抑制神经元，只沿特征维拼接主神经元脉冲。
+        # Both branches exclude inhibitory neurons; concatenate principal neuron spikes along the feature axis.
         merged = torch.cat((output_b1, output_b2), dim=-1)
         output, _, records_shared = self.shared_layers(merged, record=self._record)
         if self._record:
@@ -195,23 +195,23 @@ class GasSNN(TorchModule):
         return super().reset_state()
 
     def classification_scores(self, spikes: torch.Tensor) -> torch.Tensor:
-        """score = 累计脉冲数 * 发放阈值 + 最后重置后的剩余膜电位。"""
+        """score = cumulative spike count * firing threshold + residual membrane potential after the final reset."""
         if spikes.ndim != 3 or spikes.shape[-1] != self.size_out:
-            raise ValueError(f"脉冲输出应为 [B, T, {self.size_out}]")
+            raise ValueError(f"Spike output must have shape [B, T, {self.size_out}]")
         output_layer = cast(MaskedWeights, self.shared_layers[-2])
         readout = cast(ReadoutLIFTorch, output_layer._mod)
         final_vmem = readout.final_vmem
         if final_vmem is None:
             raise RuntimeError("请先执行模型前向计算，再读取类别分数；reset_state 后需重新计算")
         if final_vmem.shape[0] != spikes.shape[0]:
-            raise ValueError("脉冲输出与最后膜电位的批次大小不一致")
-        # 同时支持标量阈值和逐神经元阈值，抑制神经元不参加分类。
+            raise ValueError("Spike output and final membrane potential must have matching batch sizes")
+        # Support scalar and per-neuron thresholds; exclude inhibitory neurons from classification.
         threshold = cast(torch.Tensor, readout.threshold).expand(readout.size_out)[:self.size_out]
         return spikes.sum(dim=1) * threshold + final_vmem[:, :self.size_out]
 
 
 def _make_snn_layer(model_cfg, input_dim, feed_dim, input_feed_dim=None, readout=False, branch_num = 0):
-    """构建一层 Linear + LIF，保留层间掩码和层内兴奋/抑制回路。"""
+    """Build a Linear + LIF layer with interlayer masks and intralayer excitatory/inhibitory circuits."""
     inhibit_dim = feed_dim * model_cfg.inhibit_num_per_neuron
     total_dim = feed_dim + inhibit_dim
     input_mask = weight_mask_generate(input_dim, feed_dim, inhibit_dim, input_feed_dim)
@@ -221,11 +221,11 @@ def _make_snn_layer(model_cfg, input_dim, feed_dim, input_feed_dim=None, readout
     )
 
     linear = LinearTorch((input_dim, total_dim))
-    # 初始权重也应用掩码；持续约束由 MaskedWeights 的前向变换实现。
+    # Mask the initial weights too; MaskedWeights enforces constraints on every forward pass.
     with torch.no_grad():
         linear.weight.mul_(input_mask)
 
-    # Rockpool 使用 spikes @ w_rec，行是源、列是目标。
+    # Rockpool uses spikes @ w_rec, with source rows and target columns.
     recurrent_sign = torch.ones((total_dim, total_dim))
     recurrent_sign[feed_dim:, :] = -1.0
     recurrent_weight = torch.rand((total_dim, total_dim))
@@ -272,23 +272,23 @@ def _make_snn_layer(model_cfg, input_dim, feed_dim, input_feed_dim=None, readout
 
 
 def gas_snn(model_cfg=None) -> GasSNN:
-    """hidden_dim = [每个第一层分支宽度, 共享第二层宽度, 输出层宽度]。
+    """hidden_dim = [width of each first-layer branch, shared second-layer width, output-layer width].
 
-    每个宽度只填写主神经元数；每个输入分支的通道数为 sensor_num。
+    Widths count principal neurons only; each input branch has sensor_num channels.
     """
     model_cfg = cfg if model_cfg is None else model_cfg
     if len(model_cfg.hidden_dim) != 3 or any(n <= 0 for n in model_cfg.hidden_dim):
-        raise ValueError("hidden_dim 必须包含三个正数：第一层分支、第二层和输出层宽度")
+        raise ValueError("hidden_dim must contain three positive values: first-layer branch, second-layer, and output-layer widths")
     if model_cfg.sensor_num <= 0:
-        raise ValueError("sensor_num 必须为正数")
+        raise ValueError("sensor_num must be positive")
     if model_cfg.inhibit_num_per_neuron <= 0:
-        raise ValueError("inhibit_num_per_neuron 必须为正数")
+        raise ValueError("inhibit_num_per_neuron must be positive")
     if model_cfg.w_inhib >= 0:
-        raise ValueError("w_inhib 必须为负数")
+        raise ValueError("w_inhib must be negative")
 
     branch_dim, hidden_dim, output_dim = model_cfg.hidden_dim
     branch_total_dim = branch_dim * (1 + model_cfg.inhibit_num_per_neuron)
-    # 分别构造两个第一层，避免共享权重或神经元状态。
+    # Build the two first layers separately so they do not share weights or neuron states.
     branch_b1 = TorchSequential(
         *_make_snn_layer(model_cfg, model_cfg.sensor_num, branch_dim, branch_num=1),
         FeedNeuronReadout(branch_total_dim, branch_dim),
@@ -321,7 +321,7 @@ def test_main():
     assert torch.all((test2 == 0) | (test2 == 1))
     assert torch.all(test2[5:, :5].sum(dim=1) == 1)
 
-    # 小网络验证前向、反向和优化后连接拓扑。
+    # Use a small network to check forward/backward passes and connection topology after optimization.
     test_cfg = replace(cfg, sensor_num=2, inhibit_num_per_neuron=2, p_inhib=1.0)
     test_cfg.hidden_dim = [3, 4, 2]
     snn = gas_snn(test_cfg)
@@ -358,14 +358,14 @@ def test_main():
             if layer.weight_sign is not None:
                 assert torch.all(weight[layer.weight_sign > 0] >= 0)
                 assert torch.all(weight[layer.weight_sign < 0] <= 0)
-    # 第二层接收两个第一层主神经元的拼接，第三层屏蔽第二层抑制神经元。
+    # Layer 2 receives concatenated principal neurons from both branches; layer 3 masks layer 2's inhibitory neurons.
     assert snn.shared_layers[0].weight_mask.shape == (6, 12)
     assert torch.all(snn.shared_layers[0].weight_mask[:, 4:] == 0)
     assert torch.all(snn.shared_layers[2].weight_mask[4:, :] == 0)
     assert torch.all(snn.shared_layers[2].weight_mask[:, 2:] == 0)
 
-    # 掩码跟随权重转换 dtype；重新构造网络后加载 state_dict 可恢复随机拓扑。
-    # replace() 会重新计算 hidden_dim，因此恢复为被测试的层宽。
+    # Masks follow weight dtype conversions; loading state_dict into a rebuilt network restores the random topology.
+    # replace() recalculates hidden_dim, so restore the layer widths used in this test.
     restore_cfg = replace(test_cfg, p_inhib=0.0)
     restore_cfg.hidden_dim = test_cfg.hidden_dim.copy()
     restored = gas_snn(restore_cfg)
@@ -376,7 +376,7 @@ def test_main():
     for original_layer, restored_layer in zip(masked_layers, restored_layers):
         torch.testing.assert_close(original_layer.effective_weight(), restored_layer.effective_weight())
     torch.testing.assert_close(snn(input_b1, input_b2)[0], restored(input_b1, input_b2)[0])
-    # 改变第二个输入不会影响第一个分支的输出；重置会同时清空两条分支。
+    # Changing the second input leaves the first branch's output unchanged; resetting clears both branches.
     snn.reset_state()
     _, _, original_records = snn(input_b1, input_b2, record=True)
     snn.reset_state()
@@ -402,13 +402,13 @@ def test_main():
     restored.to(dtype=torch.float64)
     assert restored.branch_b1[0].weight_mask.dtype == torch.float64
     assert restored.branch_b2[1].weight_sign.dtype == torch.float64
-    # 本机 Rockpool 的脉冲生成使用 float32，前向计算继续使用该 dtype。
+    # The local Rockpool spike generator uses float32; keep this dtype for forward passes.
     restored.to(dtype=torch.float32)
     if torch.cuda.is_available():
         restored.to("cuda")
         assert restored.branch_b1[0].weight_mask.device.type == "cuda"
         assert restored(input_b1.cuda(), input_b2.cuda())[0].shape == (2, 12, 2)
-    print("双分支拼接、前向/反向、状态重置、连接约束及保存恢复测试通过")
+    print("Tests passed for dual-branch concatenation, forward/backward passes, state resets, connection constraints, and save/restore.")
 
 
 if __name__ == "__main__":

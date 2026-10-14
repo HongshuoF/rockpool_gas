@@ -1,4 +1,4 @@
-"""根据 Config 训练具有层内抑制连接的 Rockpool SNN。"""
+"""Train a Rockpool SNN with intralayer inhibitory connections using Config."""
 
 import random
 from typing import cast
@@ -14,7 +14,7 @@ import encoder
 
 
 def seed_everything(seed: int) -> None:
-    """固定模型初始化、批次打乱等训练阶段使用的随机数种子。"""
+    """Set random seeds for model initialization, batch shuffling, and other training steps."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -23,36 +23,36 @@ def seed_everything(seed: int) -> None:
 
 
 def encode_inputs(features: torch.Tensor, cfg: Config) -> torch.Tensor:
-    """将 [B, time_all * sensor_num] 编码为 [B, num_timesteps, sensor_num]。
+    """Encode [B, time_all * sensor_num] as [B, num_timesteps, sensor_num].
 
-    先沿时间轴线性插值到单次推理的总时间步数，再执行累积率编码。
-    累加器沿整条样本的时间轴连续运行，每个传感器通道独立编码。
+    Linearly interpolate along time to the total inference step count, then apply accumulating rate encoding.
+    Run the accumulator continuously over each sample's time axis, encoding each sensor channel independently.
     """
     if cfg.num_timesteps <= 0:
-        raise ValueError("num_timesteps 必须为正数")
+        raise ValueError("num_timesteps must be positive")
     expected_shape = (cfg.time_all, cfg.sensor_num)
     if features.ndim == 3 and tuple(features.shape[1:]) == expected_shape:
         features = features.flatten(start_dim=1)
     if features.ndim != 2 or features.shape[1] != cfg.time_all * cfg.sensor_num:
         raise ValueError(
-            f"每条样本应有 time_all * sensor_num = {cfg.time_all * cfg.sensor_num} 个数值，"
-            f"实际批次形状为 {tuple(features.shape)}"
+            f"Each sample must contain time_all * sensor_num = {cfg.time_all * cfg.sensor_num} values; "
+            f"got batch shape {tuple(features.shape)}"
         )
     responses = features.float().reshape(-1, cfg.time_all, cfg.sensor_num)
     rates = F.interpolate(
         responses.transpose(1, 2), size=cfg.num_timesteps,
         mode="linear", align_corners=True,
     ).transpose(1, 2).clamp(0.0, 1.0)
-    # 累计积分每越过一个整数阈值就产生一次脉冲；用累计计数的差分实现。
+    # Emit a spike at each integer threshold crossing by differencing cumulative counts.
     spike_counts = rates.cumsum(dim=1).floor()
     return torch.diff(spike_counts, dim=1, prepend=torch.zeros_like(spike_counts[:, :1]))
 
 
 def _batch_loss(scores: torch.Tensor, labels: torch.Tensor, cfg: Config) -> torch.Tensor:
-    """每条样本仅用最终类别分数计算一次交叉熵，批次内取平均。"""
+    """Compute cross entropy once per sample from final class scores and average over the batch."""
     if scores.ndim != 2 or scores.shape != (labels.numel(), cfg.category_num):
-        raise ValueError(f"类别分数应为 [B, {cfg.category_num}]，实际为 {tuple(scores.shape)}")
-    # scores 是原始 logits，cross_entropy 内部完成 log_softmax。
+        raise ValueError(f"Class scores must have shape [B, {cfg.category_num}]; got {tuple(scores.shape)}")
+    # scores contains raw logits; cross_entropy applies log_softmax internally.
     return F.cross_entropy(scores, labels)
 
 
@@ -75,8 +75,8 @@ def _run_epoch(
             labels = labels.to(device=device, dtype=torch.long).reshape(-1)
             inputs_b1 = encoder.min_rate_encoder(input=features, cfg=cfg, device=device) 
             inputs_b2 = encoder.increase_delta_encode(features)
-            inputs_b2 = torch.stack([torch.stack(row) for row in zip(*inputs_b2)])# 因为两种编码的逻辑不同，因此导致其速率编码的尺寸为【batch，time_steps, sensor_num】,而delta编码为【time_steps, batch_size, sensor_num】,因此使用delta编码时需要使用 zip 转置列表
-            # 不同批次是独立样本，膜电位、突触电流和历史脉冲不能跨批次传递。
+            inputs_b2 = torch.stack([torch.stack(row) for row in zip(*inputs_b2)])# Rate encoding uses [batch, time_steps, sensor_num], while delta encoding uses [time_steps, batch_size, sensor_num]; transpose the delta list with zip.
+            # Batches contain independent samples; do not carry membrane potentials, synaptic currents, or spike history across batches.
             model.reset_state()
             if optimizer is not None:
                 optimizer.zero_grad(set_to_none=True)
@@ -95,7 +95,7 @@ def _run_epoch(
 
     model.reset_state()
     if total_samples == 0:
-        raise ValueError("DataLoader 没有提供样本，请检查数据集划分或 drop_last 设置")
+        raise ValueError("DataLoader yielded no samples; check the dataset split or drop_last setting")
     return {
         "loss": total_loss / total_samples,
         "accuracy": 100.0 * total_correct / total_samples,
@@ -103,12 +103,12 @@ def _run_epoch(
 
 
 def train_one_epoch(model, loader, optimizer, cfg, device):
-    """训练一个 epoch，返回按样本数统计的平均损失和准确率（百分比）。"""
+    """Train one epoch and return loss and accuracy (percent), averaged by sample count."""
     return _run_epoch(model, loader, cfg, torch.device(device), optimizer)
 
 
 def evaluate(model, loader, cfg, device):
-    """评估验证集或测试集，关闭梯度计算并重置批次间的神经元状态。"""
+    """Evaluate validation or test data without gradients, resetting neuron states between batches."""
     return _run_epoch(model, loader, cfg, torch.device(device))
 
 
@@ -119,13 +119,13 @@ def fit(
     test_loader: DataLoader | None = None,
     device: torch.device | str | None = None,
 ):
-    """创建模型和 Adam，输出每个 epoch 的结果；测试集只在训练结束后评估。"""
+    """Create the model and Adam, report each epoch, and evaluate test data only after training."""
     if cfg.num_epochs <= 0:
-        raise ValueError("num_epochs 必须为正数")
+        raise ValueError("num_epochs must be positive")
     seed_everything(cfg.seed)
     device = torch.device(device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu"))
     model = cast(GasSNN, gas_snn(cfg).to(device))
-    # 使用 torch 的参数接口，等价于 Rockpool 的 model.parameters().astorch()。
+    # Use the torch parameter interface, equivalent to Rockpool's model.parameters().astorch().
     optimizer = torch.optim.Adam(torch.nn.Module.parameters(model), lr=cfg.learning_rate)
     history = []
     print(

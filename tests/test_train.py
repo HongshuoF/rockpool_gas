@@ -18,7 +18,7 @@ from train import _batch_loss, encode_inputs, evaluate, fit, train_one_epoch
 
 
 class SimpleReadout(TorchModule):
-    """可计算精确损失的读出，用于检查统计方式和批次状态重置。"""
+    """A readout with exactly computable loss for checking metrics and batch state resets."""
 
     def __init__(self):
         super().__init__(shape=(2, 2))
@@ -49,7 +49,7 @@ def small_config(**kwargs):
 class TrainingTests(unittest.TestCase):
     def test_total_timesteps_and_accumulating_rates(self):
         cfg = small_config()
-        # 半幅输入每两步发放一次，满幅输入每步发放一次。
+        # Half-amplitude inputs spike every two steps; full-amplitude inputs spike every step.
         encoded = encode_inputs(torch.tensor([[0.5, 1.0]]), cfg)
         self.assertEqual(tuple(encoded.shape), (1, 4, 2))
         torch.testing.assert_close(encoded[0, :, 0], torch.tensor([0.0, 1.0, 0.0, 1.0]))
@@ -58,7 +58,7 @@ class TrainingTests(unittest.TestCase):
     def test_time_order_is_preserved(self):
         cfg = small_config()
         cfg.time_all = 2
-        # 通道 0 从 0 升到 1，通道 1 一直为 0；时间与通道不能互换。
+        # Channel 0 rises from 0 to 1 while channel 1 stays at 0; time and channel axes must not be swapped.
         features = torch.tensor([[0.0, 0.0, 1.0, 0.0]])
         encoded = encode_inputs(features, cfg)
         torch.testing.assert_close(encoded[0, :, 0], torch.tensor([0.0, 0.0, 1.0, 1.0]))
@@ -74,7 +74,7 @@ class TrainingTests(unittest.TestCase):
             torch.tensor([0, 1, 1]),
         ), batch_size=2)
         model = SimpleReadout()
-        # 固定编码结果，使损失和准确率能独立于传感器预处理精确计算。
+        # Fix the encoded output so loss and accuracy can be computed exactly, independently of sensor preprocessing.
         with patch("train.encoder.min_rate_encoder", side_effect=lambda input, cfg, device: encode_inputs(input, cfg)):
             metrics = evaluate(model, loader, cfg, "cpu")
         expected_scores = torch.tensor([[4.0, 0.0], [0.0, 4.0], [4.0, 0.0]])
@@ -107,7 +107,7 @@ class TrainingTests(unittest.TestCase):
         torch.testing.assert_close(readout_spikes, reference_spikes)
         torch.testing.assert_close(readout.final_vmem, records["vmem"][:, -1])
         self.assertEqual(tuple(readout.final_vmem.shape), (2, 2))
-        # 第二条样本没有发放，剩余膜电位仍应保留到输入的梯度路径。
+        # The second sample emits no spikes; its residual membrane potential must retain the gradient path to the input.
         readout.final_vmem[1].sum().backward()
         self.assertGreater(data.grad[1].abs().sum().item(), 0.0)
         readout.reset_state()
@@ -121,7 +121,7 @@ class TrainingTests(unittest.TestCase):
         for device in devices:
             with self.subTest(device=device):
                 model = gas_snn(cfg).to(device)
-                # 模拟脉冲数并列，最后剩余膜电位使类别 1 获胜。
+                # Simulate tied spike counts; the final residual membrane potential makes class 1 win.
                 spikes = torch.tensor([[[1.0, 1.0], [0.0, 0.0]]], device=device)
                 output_lif = model.shared_layers[-2]._mod
                 residual = torch.tensor([[0.1, 0.8, 99.0, 99.0]], device=device, requires_grad=True)
@@ -132,7 +132,7 @@ class TrainingTests(unittest.TestCase):
                 _batch_loss(scores, torch.tensor([1], device=device), cfg).backward()
                 self.assertGreater(residual.grad[:, :2].abs().sum().item(), 0.0)
                 self.assertTrue(torch.all(residual.grad[:, 2:] == 0))
-                # 检查完整批次和不足配置大小的尾批次，直接验证实际前向。
+                # Check actual forward passes for full batches and final batches smaller than the configured size.
                 for batch_size in (16, 14, 1):
                     model.reset_state()
                     input_b1 = torch.full((batch_size, 4, 2), 0.05, device=device)
@@ -176,7 +176,7 @@ class TrainingTests(unittest.TestCase):
                 for row in history:
                     self.assertTrue(math.isfinite(row["train_loss"]))
                     self.assertTrue(math.isfinite(row["val_loss"]))
-                # 重复评估应一致，验证批次之间和两次评估之间均无状态残留。
+                # Repeated evaluations must match, with no residual state between batches or evaluation runs.
                 self.assertEqual(evaluate(model, loader, cfg, device), evaluate(model, loader, cfg, device))
 
 

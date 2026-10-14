@@ -10,27 +10,27 @@ class Config:
     dataset_root: str = "D:\\gas_dataset\\"
     ## NOTE:
     # dataset define with data_input.py
-    # 默认数据集形式如下： 标签 时间1的全部传感数据（传感器1 传感器2 ... 传感器n） 时间2 ... 时间m
-    # 该程序主要功能依据传感器数量对数据进行划分，按照时间顺序将其输入主程序
-    # 以下是不同传感器数据集对应路径
+    # Default dataset format: label, all readings at time 1 (sensor 1 ... sensor n), time 2 ... time m.
+    # Split the data by sensor count and pass it to the main program in chronological order.
+    # Paths for the different sensor datasets are listed below.
     # dataset_path: str = "twin+gas+sensor+arrays/data_processedV3/20251224.csv"
     # labellist: dict = field(default_factory=lambda: {'CO': 0, 'Ey': 1, 'Ea': 2, 'Me': 3})
-    # sensor_num: int = 8       # 每条数据有几个传感器数据
-    # sensor_start: int = 1     # 从第几个数据开始是传感器数据
+    # sensor_num: int = 8       # Number of sensors per sample.
+    # sensor_start: int = 1     # Zero-based column index where sensor data starts.
 
     dataset_path: str = "wine/data_processV2/2025112201.csv"
-    sensor_num: int = 6         # 每条数据有几个传感器数据
-    sensor_start: int = 1     # 从第几个-1开始是传感器数据
+    sensor_num: int = 6         # Number of sensors per sample.
+    sensor_start: int = 1     # Zero-based column index where sensor data starts.
     labellist: dict = field(default_factory=lambda: {'HQ': 0, 'AQ': 1, 'LQ': 2, 'Ea': 3})
 
     # dataset_path: str = "WTD/2025112401.csv"
-    # sensor_num: int = 72       # 每条数据有几个传感器数据
-    # sensor_start: int = 1     # 从第几个-1开始是传感器数据
+    # sensor_num: int = 72       # Number of sensors per sample.
+    # sensor_start: int = 1     # Zero-based column index where sensor data starts.
     # labellist: dict = field(default_factory=lambda: {'Acetaldehyde': 0, 'Acetone': 1, 'Ammonia': 2, 'Benzene': 3, 'Butanol': 4, 'CO': 5, 'Ethylene': 6, 'Methane': 7, 'Methanol': 8, 'Toluene': 9})
 
     # dataset_path: str = "self_construction/data_processedV1/data2.csv"
-    # sensor_num: int = 4        # 每条数据有几个传感器数据
-    # sensor_start: int = 1     # 从第几个-1开始是传感器数据
+    # sensor_num: int = 4        # Number of sensors per sample.
+    # sensor_start: int = 1     # Zero-based column index where sensor data starts.
     # labellist: dict = field(default_factory=lambda: {'5': 0, '30': 1, '60': 2})
     category_num: int = field(init=False)
     hidden_dim: list = field(init=False)
