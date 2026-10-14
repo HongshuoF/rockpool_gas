@@ -73,14 +73,14 @@ def _run_epoch(
         for features, labels in loader:
             features = features.to(device=device, dtype=torch.float32)
             labels = labels.to(device=device, dtype=torch.long).reshape(-1)
-            # inputs = encoder.min_rate_encoder(input=features, cfg=cfg, device=device) 
-            inputs = encoder.increase_delta_encode(features)
-            inputs = torch.stack([torch.stack(row) for row in zip(*inputs)])# 因为两种编码的逻辑不同，因此导致其速率编码的尺寸为【batch，time_steps, sensor_num】,而delta编码为【time_steps, batch_size, sensor_num】,因此使用delta编码时需要使用 zip 转置列表
+            inputs_b1 = encoder.min_rate_encoder(input=features, cfg=cfg, device=device) 
+            inputs_b2 = encoder.increase_delta_encode(features)
+            inputs_b2 = torch.stack([torch.stack(row) for row in zip(*inputs_b2)])# 因为两种编码的逻辑不同，因此导致其速率编码的尺寸为【batch，time_steps, sensor_num】,而delta编码为【time_steps, batch_size, sensor_num】,因此使用delta编码时需要使用 zip 转置列表
             # 不同批次是独立样本，膜电位、突触电流和历史脉冲不能跨批次传递。
             model.reset_state()
             if optimizer is not None:
                 optimizer.zero_grad(set_to_none=True)
-            output, _, _ = model(inputs, record=False)
+            output, _, _ = model(inputs_b1, inputs_b2, record=False)
             scores = model.classification_scores(output)
             loss = _batch_loss(scores, labels, cfg)
             if optimizer is not None:

@@ -115,7 +115,7 @@ class TrainingTests(unittest.TestCase):
 
     def test_classification_uses_spike_charge_and_residual_for_entire_batch(self):
         cfg = small_config()
-        cfg.hidden_dim = [2]
+        cfg.hidden_dim = [2, 3, 2]
         cfg.threshold = 2.0
         devices = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
         for device in devices:
@@ -123,7 +123,7 @@ class TrainingTests(unittest.TestCase):
                 model = gas_snn(cfg).to(device)
                 # 模拟脉冲数并列，最后剩余膜电位使类别 1 获胜。
                 spikes = torch.tensor([[[1.0, 1.0], [0.0, 0.0]]], device=device)
-                output_lif = model[-2]._mod
+                output_lif = model.shared_layers[-2]._mod
                 residual = torch.tensor([[0.1, 0.8, 99.0, 99.0]], device=device, requires_grad=True)
                 output_lif.final_vmem = residual
                 scores = model.classification_scores(spikes)
@@ -135,7 +135,9 @@ class TrainingTests(unittest.TestCase):
                 # 检查完整批次和不足配置大小的尾批次，直接验证实际前向。
                 for batch_size in (16, 14, 1):
                     model.reset_state()
-                    output, _, _ = model(torch.full((batch_size, 4, 2), 0.05, device=device))
+                    input_b1 = torch.full((batch_size, 4, 2), 0.05, device=device)
+                    input_b2 = torch.full((batch_size, 4, 2), 0.1, device=device)
+                    output, _, _ = model(input_b1, input_b2)
                     scores = model.classification_scores(output)
                     self.assertEqual(tuple(scores.shape), (batch_size, 2))
                     expected = output.sum(dim=1) * cfg.threshold + output_lif.final_vmem[:, :2]

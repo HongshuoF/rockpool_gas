@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 class Config:
     batch_size: int = 16
     learning_rate: float = 2e-4
-    num_epochs: int = 5000
+    num_epochs: int = 5000    
+    dataset_root: str = "D:\\gas_dataset\\"
     ## NOTE:
     # dataset define with data_input.py
     # 默认数据集形式如下： 标签 时间1的全部传感数据（传感器1 传感器2 ... 传感器n） 时间2 ... 时间m
@@ -34,16 +35,18 @@ class Config:
     category_num: int = field(init=False)
     hidden_dim: list = field(init=False)
     seed: int = 42
-    tau_mem: float = 100e-3
-    tau_syn: float = 50e-3
-    threshold: float = 1.
-    bias: float = 0.
-    # - Define the temporal aspects of a data sample
     num_timesteps: int = 30
+    time_all: int = 30    
+    
+    # - Define the temporal aspects of a data sample
     dt: float = 10e-3
 
-    time_all: int = 30
-    dataset_root: str = "D:\\gas_dataset\\"
+    # The following parameters are used to define the LIF neuron model b1 means branch 1(connected to rate encoder)
+    # b2 means branch 2(connected to delta encoder)
+    tau_mem: list = field(init=False)  # Membrane time constant for branch 1,2,shared
+    tau_syn: list = field(init=False)  # Synaptic time constant for branch 1,2,shared
+    threshold: list = field(init=False)  # Firing threshold for branch 1,2,shared
+    bias: list = field(init=False)  # Bias for branch 1,2,shared
 
     # - Define the inhibitory connection probability and strength
     p_inhib: float = 0.3
@@ -62,3 +65,7 @@ class Config:
         self.boundary_response = [0, 6, 30, 30] # wine
         # self.boundary_response = [7, 15, 26, 48] # twin
         # self.boundary_response = [1, 17, 30, 30] # self
+        self.tau_mem = [100e-3, 100e-3, 100e-3]  # Membrane time constant for branch 1,2,shared
+        self.tau_syn = [50e-3, 50e-3, 50e-3]  # Synaptic time constant for branch 1,2,shared
+        self.threshold = [1., 1., 1.]  # Firing threshold for branch 1,2,shared
+        self.bias = [0., 0., 0.]  # Bias for branch 1,2,shared
