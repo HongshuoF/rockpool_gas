@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 @dataclass
 class Config:
     batch_size: int = 16
-    learning_rate: float = 2e-3
-    num_epochs: int = 500 
+    learning_rate: float = 2e-4
+    num_epochs: int = 5000
     ## NOTE:
     # dataset define with data_input.py
     # 默认数据集形式如下： 标签 时间1的全部传感数据（传感器1 传感器2 ... 传感器n） 时间2 ... 时间m
@@ -17,15 +17,15 @@ class Config:
     # sensor_num: int = 8       # 每条数据有几个传感器数据
     # sensor_start: int = 1     # 从第几个数据开始是传感器数据
 
-    # dataset_path: str = "wine/data_processV2/2025112201.csv"
-    # sensor_num: int = 6         # 每条数据有几个传感器数据
-    # sensor_start: int = 1     # 从第几个-1开始是传感器数据
-    # labellist: dict = field(default_factory=lambda: {'HQ': 0, 'AQ': 1, 'LQ': 2, 'Ea': 3})
-
-    dataset_path: str = "WTD/2025112401.csv"
-    sensor_num: int = 72       # 每条数据有几个传感器数据
+    dataset_path: str = "wine/data_processV2/2025112201.csv"
+    sensor_num: int = 6         # 每条数据有几个传感器数据
     sensor_start: int = 1     # 从第几个-1开始是传感器数据
-    labellist: dict = field(default_factory=lambda: {'Acetaldehyde': 0, 'Acetone': 1, 'Ammonia': 2, 'Benzene': 3, 'Butanol': 4, 'CO': 5, 'Ethylene': 6, 'Methane': 7, 'Methanol': 8, 'Toluene': 9})
+    labellist: dict = field(default_factory=lambda: {'HQ': 0, 'AQ': 1, 'LQ': 2, 'Ea': 3})
+
+    # dataset_path: str = "WTD/2025112401.csv"
+    # sensor_num: int = 72       # 每条数据有几个传感器数据
+    # sensor_start: int = 1     # 从第几个-1开始是传感器数据
+    # labellist: dict = field(default_factory=lambda: {'Acetaldehyde': 0, 'Acetone': 1, 'Ammonia': 2, 'Benzene': 3, 'Butanol': 4, 'CO': 5, 'Ethylene': 6, 'Methane': 7, 'Methanol': 8, 'Toluene': 9})
 
     # dataset_path: str = "self_construction/data_processedV1/data2.csv"
     # sensor_num: int = 4        # 每条数据有几个传感器数据
@@ -50,6 +50,15 @@ class Config:
     w_inhib: float = -1.0
     inhibit_num_per_neuron: int = 5
 
+    # gas data divide point t1,t2,t3,t4, t1-t2: response stage, t3-t4: recovery stage, t2-t3: steady stage
+    boundary_response: list = field(init=False)
+    prediction_drift = 0.05
+    spike_threshold = 0.03
+
     def __post_init__(self):
         self.category_num = len(self.labellist)
         self.hidden_dim = [self.sensor_num, 32, self.category_num]
+        # self.boundary_response = [0, 0, 30, 30] # WTD
+        self.boundary_response = [0, 6, 30, 30] # wine
+        # self.boundary_response = [7, 15, 26, 48] # twin
+        # self.boundary_response = [1, 17, 30, 30] # self

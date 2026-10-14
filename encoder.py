@@ -1,6 +1,7 @@
 import csv
 import torch
 from pathlib import Path
+import config
 
 def _load_csv_responses(csv_path, sensor_count):
     """Load the labels and sensor responses.
@@ -109,6 +110,58 @@ def min_rate_encoder(input, cfg, device):
             # x = x.float()
             # outspike_list.append(x)
     return outspike_list
+
+def increase_delta_encode(input):
+    """Encode responses using automatically detected response boundaries.
+
+    ``input`` contains numeric sensor responses only and has shape
+    ``[batch_size, sensor_count * T]``. Values at each time point are ordered by
+    sensor. The CSV class-label column must be removed before calling this
+    function. If the response pair is unsupported, ``t1 = t2 = 0`` is used;
+    if the recovery pair is unsupported, ``t3 = t4 = T`` is used. 
+
+    The code for dividing the response stage of the gas sensor is only for demonstration purposes. 
+    The actual division of the sensor's response stage is carried out on the training set, and it is fixed during the actual test.
+    """
+    cfg = config.Config()
+    sensor_count = cfg.sensor_num
+    boundaries = torch.tensor(cfg.boundary_response, dtype=torch.long, device=input.device)
+    if sensor_count <= 0 or input.shape[1] % sensor_count != 0:
+        raise ValueError(
+            "The number of input values must be divisible by sensor_count"
+        )
+
+    batch_size = input.shape[0]
+    time_points = input.shape[1] // sensor_count
+
+    responses = input.reshape(batch_size, time_points, sensor_count)
+
+    outspike_list = []
+    prediction_drift = cfg.prediction_drift
+    spike_threshold = cfg.spike_threshold
+    prediction = responses[:, 1, :].clone()
+
+    for time_index in range(time_points):
+        current_input = responses[:, time_index, :]
+        current_delta = current_input - prediction
+        current_spike = (current_delta > spike_threshold).to(input.dtype)
+        current_spike -= (current_delta < -spike_threshold).to(input.dtype)
+        outspike_list.append(current_spike)
+
+        in_response_transition = (
+            (time_index >= boundaries[0]) & (time_index < boundaries[1])
+        )
+        in_recovery_transition = (
+            (time_index >= boundaries[2]) & (time_index < boundaries[3])
+        )
+        drift = (
+            - in_response_transition.to(input.dtype)
+            + in_recovery_transition.to(input.dtype)
+        )* prediction_drift
+        prediction = prediction + current_spike * spike_threshold + drift
+
+    return outspike_list
+
 
 def main():
     sensor_count = 6  # sensor number in dataset: 6 in example1 and 4 in example2
